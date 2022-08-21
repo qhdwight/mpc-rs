@@ -23,14 +23,6 @@ pub struct UnicycleKinematics {
     pub x: StateVec,
 }
 
-struct TrajectoryState {
-    pose: StateVec,
-}
-
-struct Trajectory {
-    states: Vec<TrajectoryState>,
-}
-
 impl Robot for UnicycleKinematics {
     fn tick(&self, u: InputVec, T: f32) -> StateVec {
         let mut x = self.x.clone();

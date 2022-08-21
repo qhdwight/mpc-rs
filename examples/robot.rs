@@ -1,12 +1,17 @@
 use bevy::prelude::*;
 
-use mpc_rs::controller::MpcController;
-use mpc_rs::robot::*;
+use mpc_rs::controller::{LinearTimedTrajectory, MpcController, TimedTrajectory};
+use mpc_rs::robot::{StateVec, UnicycleKinematics};
 
 #[derive(Component)]
-struct Robot {
-    kinematics: UnicycleKinematics,
-}
+struct Robot(UnicycleKinematics);
+
+#[derive(Component)]
+struct Controller(MpcController);
+
+#[derive(Component)]
+struct Trajectory(LinearTimedTrajectory);
+
 
 fn main() {
     App::new()
@@ -32,10 +37,15 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         texture: asset_server.load("robot.png"),
         transform: Transform::from_xyz(20.0, 20.0, 0.0),
         ..default()
-    });
-    commands.spawn().insert(Robot {
-        kinematics: UnicycleKinematics { x: StateVec::new(2.0, 2.0, 0.0) }
-    });
+    })
+        .insert(Robot {
+            0: UnicycleKinematics {
+                x: StateVec::new(2.0, 2.0, 0.0)
+            }
+        })
+        .insert(Controller { 0: MpcController {} });
 }
 
-fn tick(robot: Query<&Robot>, controller: ResMut<MpcController>) {}
+fn tick(mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &mut Trajectory)>) {
+    for (mut robot, mut transform, mut controller, mut trajectory) in &mut query {}
+}
