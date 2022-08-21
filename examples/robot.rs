@@ -1,22 +1,21 @@
 use bevy::prelude::*;
 
-use mpc_rs::controller::{LinearTimedTrajectory, MpcController, TimedTrajectory};
+use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController};
 use mpc_rs::robot::{StateVec, UnicycleKinematics};
 
 #[derive(Component)]
 struct Robot(UnicycleKinematics);
 
 #[derive(Component)]
-struct Controller(MpcController);
+struct Controller(MpcController<LinearTimedPath>);
 
 #[derive(Component)]
-struct Trajectory(LinearTimedTrajectory);
+struct Trajectory(LinearTimedPath);
 
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(MpcController {})
         .insert_resource(WindowDescriptor {
             title: "Robot Simulator".to_string(),
             ..default()
@@ -38,12 +37,15 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         transform: Transform::from_xyz(20.0, 20.0, 0.0),
         ..default()
     })
-        .insert(Robot {
-            0: UnicycleKinematics {
-                x: StateVec::new(2.0, 2.0, 0.0)
-            }
-        })
-        .insert(Controller { 0: MpcController {} });
+        .insert(Robot(UnicycleKinematics {
+            x: StateVec::new(2.0, 2.0, 0.0)
+        }))
+        .insert(Controller(MpcController::new(
+            0.0, 0.0, 0.0, ConstraintMat::zeros(),
+        )))
+        .insert(Trajectory(LinearTimedPath::new(
+            Vec::new(), 0.1,
+        )));
 }
 
 fn tick(mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &mut Trajectory)>) {
