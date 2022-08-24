@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 
 use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController};
-use mpc_rs::robot::{StateVec, UnicycleKinematics};
+use mpc_rs::robot::{LinearSystem, LinearUnicycleSystem, StateVec, NonlinearUnicycleSystem};
 
 #[derive(Component)]
-struct Robot(UnicycleKinematics);
+struct Robot(NonlinearUnicycleSystem);
 
 #[derive(Component)]
-struct Controller(MpcController<LinearTimedPath>);
+struct Controller(MpcController<LinearTimedPath, LinearUnicycleSystem>);
 
 #[derive(Component)]
 struct Trajectory(LinearTimedPath);
@@ -37,7 +37,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         transform: Transform::from_xyz(20.0, 20.0, 0.0),
         ..default()
     })
-        .insert(Robot(UnicycleKinematics {
+        .insert(Robot(NonlinearUnicycleSystem {
             x: StateVec::new(2.0, 2.0, 0.0)
         }))
         .insert(Controller(MpcController::new(

@@ -1,20 +1,24 @@
+use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use na::{DMatrix, DVector, Matrix3, Vector, Vector3};
+use na::{Dim, DimName, DMatrix, DVector, Matrix, Matrix3, RawStorage, Scalar};
+use num_traits::Zero;
+use osqp::Problem;
 use splines::{Interpolation, Key, Spline};
 
-use crate::robot::{InputVec, LinearUnicycleKinematics, RobotKinematics, StateVec};
+use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
+// Constraint on the input vector
 pub type ConstraintMat = Matrix3<f32>;
 
 pub trait TimedPath {
     fn new(points: Vec<Waypoint>, dt: f32) -> Self;
 
-    fn horizon_states(&self, t: f32, N: u32) -> Vec<StateVec>;
+    fn horizon_states(&self, t: f32, N: usize) -> DVector<StateVec>;
 }
 
-pub trait TimedPathController<Path: TimedPath> {
+pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
     fn new(horizon: f32, dt: f32, max_velocity: f32, Q: ConstraintMat) -> Self;
 
     fn control(&self, path: Path, x: StateVec, t: f32) -> InputVec;
@@ -30,40 +34,91 @@ pub struct LinearTimedPath {
     spline: Spline<f32, StateVec>,
 }
 
-pub struct MpcController<Path: TimedPath> {
+pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     dt: f32,
     horizon: f32,
-    N: u32,
+    horizon_count: usize,
     Q: DMatrix<f32>,
+    G: DMatrix<f32>,
+    h: DVector<f32>,
     previous_u: InputVec,
-    phantom: PhantomData<Path>,
+    phantoms: PhantomData<(Path, System)>,
 }
 
-impl<Path: TimedPath> TimedPathController<Path> for MpcController<Path> {
+
+fn diagonal_block_matrix<T: Scalar + Zero>(matrices: DVector<DMatrix<T>>) -> DMatrix<T> {
+    let total_rows = matrices.iter().map(DMatrix::nrows).sum();
+    let total_cols = matrices.iter().map(DMatrix::nrows).sum();
+    let mut block_diagonal_matrix = DMatrix::zeros(total_rows, total_cols);
+    // TODO: use ranges instead of two diff variables?
+    let mut r = 0;
+    let mut c = 0;
+    for (i, matrix) in matrices.into_iter().enumerate() {
+        let nr = r + matrix.nrows();
+        let nc = c + matrix.ncols();
+        block_diagonal_matrix.index_mut((r..nr, c..nc)).copy_from(&matrix);
+        r = nr;
+        c = nc;
+    }
+    block_diagonal_matrix
+}
+
+fn into_dynamic<T, R, C, S>(matrix: Matrix<T, R, C, S>) -> DMatrix<T> where
+    T: Scalar + Zero,
+    R: Dim + DimName, C: Dim + DimName,
+    S: RawStorage<T, R, C> {
+    let mut dynamic_matrix = DMatrix::zeros(matrix.nrows(), matrix.ncols());
+    dynamic_matrix.copy_from(&matrix);
+    dynamic_matrix
+}
+
+impl<Path: TimedPath, System: LinearSystem>
+TimedPathController<Path, System> for MpcController<Path, System> {
     fn new(horizon: f32, dt: f32, max_velocity: f32, Q: ConstraintMat) -> Self {
-        let N = f32::floor(horizon / dt) as u32;
-        let M = Q.ncols() * N as usize;
-        let mut Q_blocked = DMatrix::zeros(M, M);
-        let mut Q_i = Q.clone();
-        for i in 0..(N as usize) {
-            let j = i + Q_i.ncols();
-            Q_blocked.index_mut((i..j, i..j)).copy_from(&Q_i);
-            Q_i *= Q;
-        }
+        let horizon_count = f32::floor(horizon / dt) as usize;
+
+        // Build a big matrix that encompasses the entire horizon
+        // Each "block" in the diagonal that is copied represents one state in the horizon
+        // The weights are exponential as we get further out so that we converge
+        let mut Q = into_dynamic(Q);
+        let Q_horizon = diagonal_block_matrix(DVector::from_iterator(
+            horizon_count,
+            repeat_with(|| {
+                let Q_temp = Q.clone();
+                Q *= 2.0;
+                Q_temp
+            }).take(horizon_count)));
+        // Create the velocity constraint matrices
+        let M = horizon_count * 2;
+        let mut G = DMatrix::from_element(M * 2, M, 0.0);
+        let I = DMatrix::identity(M, M);
+        G.index_mut((..M, ..M)).copy_from(&I);
+        G.index_mut((M..M * 2, ..M)).copy_from(&-I);
+        let h = DVector::from_element(M, max_velocity);
         MpcController {
             dt,
             horizon,
-            N,
-            Q: Q_blocked,
+            horizon_count,
+            Q: Q_horizon,
+            G,
+            h,
             previous_u: InputVec::zeros(),
-            phantom: PhantomData,
+            phantoms: PhantomData,
         }
     }
 
     fn control(&self, path: Path, x: StateVec, t: f32) -> InputVec {
-        let horizon_states = path.horizon_states(t, self.N);
-        let kinematics = LinearUnicycleKinematics::new(x, self.previous_u, self.dt);
+        let target_states = path.horizon_states(t, self.horizon_count);
+        let system = System::new(x, self.previous_u, self.dt);
+        let (A, B) = system.get_system();
+        let predicted_state_A_component = DVector::from_iterator(
+            self.horizon_count,
+            (0..self.horizon_count).scan(SystemMat::identity(), |acc, _| {
+                *acc *= A;
+                Some(*acc * x)
+            }));
 
+        let predicted_state_B_component = ();
         todo!()
     }
 }
@@ -77,10 +132,9 @@ impl TimedPath for LinearTimedPath {
         }
     }
 
-    fn horizon_states(&self, t: f32, N: u32) -> Vec<StateVec> {
-        (0..N)
+    fn horizon_states(&self, t: f32, N: usize) -> DVector<StateVec> {
+        DVector::from_iterator(N, (0..N)
             .map(|i| i as f32)
-            .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate"))
-            .collect()
+            .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate")))
     }
 }
