@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController};
-use mpc_rs::robot::{LinearSystem, LinearUnicycleSystem, StateVec, NonlinearUnicycleSystem};
+use mpc_rs::robot::{InputVec, LinearSystem, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec};
 
 #[derive(Component)]
 struct Robot(NonlinearUnicycleSystem);
@@ -41,7 +41,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             x: StateVec::new(2.0, 2.0, 0.0)
         }))
         .insert(Controller(MpcController::new(
-            0.0, 0.0, 0.0, ConstraintMat::zeros(),
+            0.2, 0.05, InputVec::new(1.0, 0.3), ConstraintMat::new(
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 50.0
+            ),
         )))
         .insert(Trajectory(LinearTimedPath::new(
             Vec::new(), 0.1,

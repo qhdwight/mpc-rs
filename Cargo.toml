@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.8.0"
+bevy = "0.8.1"
 nalgebra = "0.31.1"
 osqp = "0.6.2"
 splines = { version = "4.1.1", features = ["nalgebra"] }

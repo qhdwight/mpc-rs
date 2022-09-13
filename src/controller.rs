@@ -6,6 +6,7 @@ use num_traits::Zero;
 use osqp::Problem;
 use splines::{Interpolation, Key, Spline};
 
+use crate::math::{diagonal_block_matrix, into_dynamic};
 use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
@@ -19,7 +20,7 @@ pub trait TimedPath {
 }
 
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
-    fn new(horizon: f32, dt: f32, max_velocity: f32, Q: ConstraintMat) -> Self;
+    fn new(horizon: f32, dt: f32, max_velocity: InputVec, Q: ConstraintMat) -> Self;
 
     fn control(&self, path: Path, x: StateVec, t: f32) -> InputVec;
 }
@@ -45,39 +46,12 @@ pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     phantoms: PhantomData<(Path, System)>,
 }
 
-
-fn diagonal_block_matrix<T: Scalar + Zero>(matrices: DVector<DMatrix<T>>) -> DMatrix<T> {
-    let total_rows = matrices.iter().map(DMatrix::nrows).sum();
-    let total_cols = matrices.iter().map(DMatrix::nrows).sum();
-    let mut block_diagonal_matrix = DMatrix::zeros(total_rows, total_cols);
-    // TODO: use ranges instead of two diff variables?
-    let mut r = 0;
-    let mut c = 0;
-    for (i, matrix) in matrices.into_iter().enumerate() {
-        let nr = r + matrix.nrows();
-        let nc = c + matrix.ncols();
-        block_diagonal_matrix.index_mut((r..nr, c..nc)).copy_from(&matrix);
-        r = nr;
-        c = nc;
-    }
-    block_diagonal_matrix
-}
-
-fn into_dynamic<T, R, C, S>(matrix: Matrix<T, R, C, S>) -> DMatrix<T> where
-    T: Scalar + Zero,
-    R: Dim + DimName, C: Dim + DimName,
-    S: RawStorage<T, R, C> {
-    let mut dynamic_matrix = DMatrix::zeros(matrix.nrows(), matrix.ncols());
-    dynamic_matrix.copy_from(&matrix);
-    dynamic_matrix
-}
-
 impl<Path: TimedPath, System: LinearSystem>
 TimedPathController<Path, System> for MpcController<Path, System> {
-    fn new(horizon: f32, dt: f32, max_velocity: f32, Q: ConstraintMat) -> Self {
+    fn new(horizon: f32, dt: f32, max_velocity: InputVec, Q: ConstraintMat) -> Self {
         let horizon_count = f32::floor(horizon / dt) as usize;
 
-        // Build a big matrix that encompasses the entire horizon
+        // Build a big block diagonal matrix that encompasses the entire horizon
         // Each "block" in the diagonal that is copied represents one state in the horizon
         // The weights are exponential as we get further out so that we converge
         let mut Q = into_dynamic(Q);
@@ -94,7 +68,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let I = DMatrix::identity(M, M);
         G.index_mut((..M, ..M)).copy_from(&I);
         G.index_mut((M..M * 2, ..M)).copy_from(&-I);
-        let h = DVector::from_element(M, max_velocity);
+        let h = DVector::from_iterator(M, max_velocity.iter().cycle().take(horizon_count * 2));
         MpcController {
             dt,
             horizon,
