@@ -1,12 +1,11 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use na::{Dim, DimName, DMatrix, DVector, Matrix, Matrix3, RawStorage, Scalar};
-use num_traits::Zero;
+use na::{DMatrix, DVector, Matrix, Matrix3, RawStorage, Scalar};
 use osqp::Problem;
 use splines::{Interpolation, Key, Spline};
 
-use crate::math::{diagonal_block_matrix, into_dynamic};
+use crate::math::{diagonal_block_matrix, into_dynamic, tile};
 use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
@@ -41,7 +40,7 @@ pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     horizon_count: usize,
     Q: DMatrix<f32>,
     G: DMatrix<f32>,
-    h: DVector<f32>,
+    h: DMatrix<f32>,
     previous_u: InputVec,
     phantoms: PhantomData<(Path, System)>,
 }
@@ -68,7 +67,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let I = DMatrix::identity(M, M);
         G.index_mut((..M, ..M)).copy_from(&I);
         G.index_mut((M..M * 2, ..M)).copy_from(&-I);
-        let h = DVector::from_iterator(M, max_velocity.iter().cycle().take(horizon_count * 2));
+        let h = tile(max_velocity, horizon_count * 2, 1);
         MpcController {
             dt,
             horizon,

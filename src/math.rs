@@ -9,11 +9,11 @@ pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: DVector<DMatrix<T>>) ->
     let mut r = 0;
     let mut c = 0;
     for matrix in matrices.into_iter() {
-        let nr = r + matrix.nrows();
-        let nc = c + matrix.ncols();
-        block_diagonal_matrix.index_mut((r..nr, c..nc)).copy_from(&matrix);
-        r = nr;
-        c = nc;
+        let next_r = r + matrix.nrows();
+        let next_c = c + matrix.ncols();
+        block_diagonal_matrix.index_mut((r..next_r, c..next_c)).copy_from(&matrix);
+        r = next_r;
+        c = next_c;
     }
     block_diagonal_matrix
 }
@@ -27,14 +27,20 @@ pub fn into_dynamic<T, R, C, S>(matrix: Matrix<T, R, C, S>) -> DMatrix<T> where
     dynamic_matrix
 }
 
-pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, count: usize) -> DMatrix<T> where
+pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, r: usize, c: usize) -> DMatrix<T> where
     T: Scalar + Zero,
     R: Dim + DimName, C: Dim + DimName,
     S: RawStorage<T, R, C> {
-    let mut tiled_matrix = DMatrix::zeros(matrix.nrows(), matrix.ncols() * count);
-    for _ in 0..count {
-        let i = count * C;
-        tiled_matrix.index_mut(()).copy_from(&matrix);
+    let nr = matrix.nrows();
+    let nc = matrix.ncols();
+    let mut tiled_matrix: DMatrix<T> = DMatrix::zeros(nr * r, nc * c);
+    for ir in 0..r {
+        for ic in 0..c {
+            tiled_matrix.index_mut((
+                ir * nr..(ir + 1) * nr,
+                ic * nc..(ic + 1) * nc,
+            )).copy_from(&matrix);
+        }
     }
     tiled_matrix
 }
