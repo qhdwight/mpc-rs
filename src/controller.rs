@@ -1,7 +1,7 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use na::{DMatrix, DVector, Matrix, Matrix3, RawStorage, Scalar};
+use na::{DMatrix, DVector, Matrix3};
 use osqp::Problem;
 use splines::{Interpolation, Key, Spline};
 
@@ -21,12 +21,12 @@ pub trait TimedPath {
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
     fn new(horizon: f32, dt: f32, max_velocity: InputVec, Q: ConstraintMat) -> Self;
 
-    fn control(&self, path: Path, x: StateVec, t: f32) -> InputVec;
+    fn control(&self, path: &Path, x: StateVec, t: f32) -> InputVec;
 }
 
 pub struct Waypoint {
-    pose: StateVec,
-    time: f32,
+    pub pose: StateVec,
+    pub time: f32,
 }
 
 pub struct LinearTimedPath {
@@ -80,7 +80,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         }
     }
 
-    fn control(&self, path: Path, x: StateVec, t: f32) -> InputVec {
+    fn control(&self, path: &Path, x: StateVec, t: f32) -> InputVec {
         let target_states = path.horizon_states(t, self.horizon_count);
         let system = System::new(x, self.previous_u, self.dt);
         let (A, B) = system.get_system();
@@ -90,9 +90,10 @@ TimedPathController<Path, System> for MpcController<Path, System> {
                 *acc *= A;
                 Some(*acc * x)
             }));
-
-        let predicted_state_B_component = ();
-        todo!()
+        //
+        // let predicted_state_B_component = ();
+        // todo!()
+        InputVec::zeros()
     }
 }
 

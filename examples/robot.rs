@@ -1,7 +1,9 @@
+use std::f32::consts::TAU;
+
 use bevy::prelude::*;
 
-use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController};
-use mpc_rs::robot::{InputVec, LinearSystem, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec};
+use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController, Waypoint};
+use mpc_rs::robot::{InputVec, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec, System};
 
 #[derive(Component)]
 struct Robot(NonlinearUnicycleSystem);
@@ -38,20 +40,32 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..default()
     })
         .insert(Robot(NonlinearUnicycleSystem {
-            x: StateVec::new(2.0, 2.0, 0.0)
+            x: StateVec::new(0.0, 0.0, 0.0)
         }))
         .insert(Controller(MpcController::new(
             0.2, 0.05, InputVec::new(1.0, 0.3), ConstraintMat::new(
                 1.0, 0.0, 0.0,
                 0.0, 1.0, 0.0,
-                0.0, 0.0, 50.0
+                0.0, 0.0, 50.0,
             ),
         )))
         .insert(Trajectory(LinearTimedPath::new(
-            Vec::new(), 0.1,
+            vec![
+                Waypoint { pose: StateVec::new(0.0, 0.0, 0.0), time: 0.0 },
+                Waypoint { pose: StateVec::new(10.0, 0.0, 0.0), time: 10.0 },
+                Waypoint { pose: StateVec::new(10.0, 1.0, TAU), time: 11.0 },
+                Waypoint { pose: StateVec::new(10.0, 10.0, TAU), time: 20.0 },
+                Waypoint { pose: StateVec::new(9.0, 10.0, 2.0 * TAU), time: 21.0 },
+                Waypoint { pose: StateVec::new(-10.0, 10.0, 2.0 * TAU), time: 40.0 },
+                Waypoint { pose: StateVec::new(-10.0, 9.0, TAU), time: 41.0 },
+                Waypoint { pose: StateVec::new(-10.0, -10.0, TAU), time: 60.0 },
+            ], 0.1,
         )));
 }
 
-fn tick(mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &mut Trajectory)>) {
-    for (mut robot, mut transform, mut controller, mut trajectory) in &mut query {}
+fn tick(time: Res<Time>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &mut Trajectory)>) {
+    for (mut robot, mut transform, mut controller, mut trajectory) in &mut query {
+        let u = controller.0.control(&trajectory.0, robot.0.x, time.seconds_since_startup() as f32);
+        robot.0.x = robot.0.tick(u, time.delta_seconds());
+    }
 }
