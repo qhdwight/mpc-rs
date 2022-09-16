@@ -1,11 +1,10 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use na::{DMatrix, DVector, Matrix3};
-use osqp::Problem;
+use na::{DMatrix, Matrix3};
 use splines::{Interpolation, Key, Spline};
 
-use crate::math::{diagonal_block_matrix, into_dynamic, tile};
+use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile};
 use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
@@ -15,7 +14,7 @@ pub type ConstraintMat = Matrix3<f32>;
 pub trait TimedPath {
     fn new(points: Vec<Waypoint>, dt: f32) -> Self;
 
-    fn horizon_states(&self, t: f32, N: usize) -> DVector<StateVec>;
+    fn horizon_states(&self, t: f32, N: usize) -> Vec<StateVec>;
 }
 
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
@@ -54,13 +53,13 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         // Each "block" in the diagonal that is copied represents one state in the horizon
         // The weights are exponential as we get further out so that we converge
         let mut Q = into_dynamic(Q);
-        let Q_horizon = diagonal_block_matrix(DVector::from_iterator(
-            horizon_count,
+        let Q_horizon = diagonal_block_matrix(
             repeat_with(|| {
                 let Q_temp = Q.clone();
                 Q *= 2.0;
                 Q_temp
-            }).take(horizon_count)));
+            }).take(horizon_count).collect()
+        );
         // Create the velocity constraint matrices
         let M = horizon_count * 2;
         let mut G = DMatrix::from_element(M * 2, M, 0.0);
@@ -81,18 +80,32 @@ TimedPathController<Path, System> for MpcController<Path, System> {
     }
 
     fn control(&self, path: &Path, x: StateVec, t: f32) -> InputVec {
-        let target_states = path.horizon_states(t, self.horizon_count);
+        let target_states = horizontal_stack(path.horizon_states(t, self.horizon_count));
+
         let system = System::new(x, self.previous_u, self.dt);
         let (A, B) = system.get_system();
-        let predicted_state_A_component = DVector::from_iterator(
-            self.horizon_count,
-            (0..self.horizon_count).scan(SystemMat::identity(), |acc, _| {
-                *acc *= A;
-                Some(*acc * x)
-            }));
-        //
-        // let predicted_state_B_component = ();
-        // todo!()
+
+        let alpha = horizontal_stack(
+            (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+                *A_exp *= &A;
+                Some(*A_exp * &x)
+            }).collect()
+        );
+
+        let R_diag_iter = (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+            let next = *A_exp * &B;
+            *A_exp *= &A;
+            Some(next)
+        });
+        let mut R_diag = R_diag_iter.map(into_dynamic).collect::<Vec<_>>();
+        R_diag.reverse();
+        let R = diagonal_block_matrix(R_diag);
+
+        let P = &R.transpose() * &self.Q * &R;
+        let q = (&alpha - &target_states);
+
+        println!("{}", P);
+
         InputVec::zeros()
     }
 }
@@ -106,9 +119,10 @@ impl TimedPath for LinearTimedPath {
         }
     }
 
-    fn horizon_states(&self, t: f32, N: usize) -> DVector<StateVec> {
-        DVector::from_iterator(N, (0..N)
+    fn horizon_states(&self, t: f32, N: usize) -> Vec<StateVec> {
+        (0..N)
             .map(|i| i as f32)
-            .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate")))
+            .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate"))
+            .collect()
     }
 }
