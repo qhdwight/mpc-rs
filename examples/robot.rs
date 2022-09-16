@@ -1,4 +1,4 @@
-use std::f32::consts::TAU;
+use std::f64::consts::TAU;
 
 use bevy::prelude::*;
 
@@ -68,8 +68,8 @@ fn tick(time: Res<Time>, mut query: Query<(&mut Robot, &mut Transform, &mut Cont
         let mut robot: Mut<Robot> = robot;
         let mut transform: Mut<Transform> = transform;
 
-        let u = controller.0.control(&trajectory.0, robot.0.x, time.seconds_since_startup() as f32);
-        robot.0.x = robot.0.tick(u, time.delta_seconds());
-        transform.translation = Vec3::new(robot.0.x.x, robot.0.x.y, 0.0);
+        let u = controller.0.control(&trajectory.0, robot.0.x, time.seconds_since_startup());
+        robot.0.x = robot.0.tick(u, time.delta_seconds_f64());
+        transform.translation = Vec3::new(robot.0.x.x as f32, robot.0.x.y as f32, 0.0);
     }
 }

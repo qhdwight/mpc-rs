@@ -1,4 +1,4 @@
-use na::{Dim, DimName, DMatrix, Matrix, RawStorage, Scalar};
+use nalgebra::{Dim, DimName, DMatrix, Matrix, RawStorage, Scalar};
 use num_traits::Zero;
 
 pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: Vec<DMatrix<T>>) -> DMatrix<T> {

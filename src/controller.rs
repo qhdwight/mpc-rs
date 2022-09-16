@@ -1,7 +1,8 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use na::{DMatrix, Matrix3};
+use nalgebra::{DMatrix, Matrix3};
+use osqp::{CscMatrix, Problem, Settings};
 use splines::{Interpolation, Key, Spline};
 
 use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile};
@@ -9,45 +10,45 @@ use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
 // Constraint on the input vector
-pub type ConstraintMat = Matrix3<f32>;
+pub type ConstraintMat = Matrix3<f64>;
 
 pub trait TimedPath {
-    fn new(points: Vec<Waypoint>, dt: f32) -> Self;
+    fn new(points: Vec<Waypoint>, dt: f64) -> Self;
 
-    fn horizon_states(&self, t: f32, N: usize) -> Vec<StateVec>;
+    fn horizon_states(&self, t: f64, N: usize) -> Vec<StateVec>;
 }
 
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
-    fn new(horizon: f32, dt: f32, max_velocity: InputVec, Q: ConstraintMat) -> Self;
+    fn new(horizon: f64, dt: f64, max_velocity: InputVec, Q: ConstraintMat) -> Self;
 
-    fn control(&self, path: &Path, x: StateVec, t: f32) -> InputVec;
+    fn control(&self, path: &Path, x: StateVec, t: f64) -> InputVec;
 }
 
 pub struct Waypoint {
     pub pose: StateVec,
-    pub time: f32,
+    pub time: f64,
 }
 
 pub struct LinearTimedPath {
-    dt: f32,
-    spline: Spline<f32, StateVec>,
+    dt: f64,
+    spline: Spline<f64, StateVec>,
 }
 
 pub struct MpcController<Path: TimedPath, System: LinearSystem> {
-    dt: f32,
-    horizon: f32,
+    dt: f64,
+    horizon: f64,
     horizon_count: usize,
-    Q: DMatrix<f32>,
-    G: DMatrix<f32>,
-    h: DMatrix<f32>,
+    Q: DMatrix<f64>,
+    G: DMatrix<f64>,
+    h: DMatrix<f64>,
     previous_u: InputVec,
     phantoms: PhantomData<(Path, System)>,
 }
 
 impl<Path: TimedPath, System: LinearSystem>
 TimedPathController<Path, System> for MpcController<Path, System> {
-    fn new(horizon: f32, dt: f32, max_velocity: InputVec, Q: ConstraintMat) -> Self {
-        let horizon_count = f32::floor(horizon / dt) as usize;
+    fn new(horizon: f64, dt: f64, max_velocity: InputVec, Q: ConstraintMat) -> Self {
+        let horizon_count = f64::floor(horizon / dt) as usize;
 
         // Build a big block diagonal matrix that encompasses the entire horizon
         // Each "block" in the diagonal that is copied represents one state in the horizon
@@ -79,7 +80,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         }
     }
 
-    fn control(&self, path: &Path, x: StateVec, t: f32) -> InputVec {
+    fn control(&self, path: &Path, x: StateVec, t: f64) -> InputVec {
         let target_states = horizontal_stack(path.horizon_states(t, self.horizon_count));
 
         let system = System::new(x, self.previous_u, self.dt);
@@ -104,14 +105,22 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let P = &R.transpose() * &self.Q * &R;
         let q = (&alpha - &target_states);
 
-        println!("{}", P);
+        // let P = CscMatrix::from_row_iter_dense(P.nrows(), P.ncols(), P.iter());
+
+        // CscMatrix::from(&[]);
+        //
+        // let settings = Settings::default().verbose(true);
+        //
+        // let mut prob = Problem::new(P, q, self.G, self.h, &settings).expect("Failed to setup problem");
+        //
+        // println!("{}", P);
 
         InputVec::zeros()
     }
 }
 
 impl TimedPath for LinearTimedPath {
-    fn new(waypoints: Vec<Waypoint>, dt: f32) -> Self {
+    fn new(waypoints: Vec<Waypoint>, dt: f64) -> Self {
         LinearTimedPath {
             dt,
             spline: Spline::from_iter(waypoints.iter()
@@ -119,9 +128,9 @@ impl TimedPath for LinearTimedPath {
         }
     }
 
-    fn horizon_states(&self, t: f32, N: usize) -> Vec<StateVec> {
+    fn horizon_states(&self, t: f64, N: usize) -> Vec<StateVec> {
         (0..N)
-            .map(|i| i as f32)
+            .map(|i| i as f64)
             .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate"))
             .collect()
     }
