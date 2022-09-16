@@ -53,19 +53,23 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             vec![
                 Waypoint { pose: StateVec::new(0.0, 0.0, 0.0), time: 0.0 },
                 Waypoint { pose: StateVec::new(10.0, 0.0, 0.0), time: 10.0 },
-                Waypoint { pose: StateVec::new(10.0, 1.0, TAU), time: 11.0 },
-                Waypoint { pose: StateVec::new(10.0, 10.0, TAU), time: 20.0 },
-                Waypoint { pose: StateVec::new(9.0, 10.0, 2.0 * TAU), time: 21.0 },
-                Waypoint { pose: StateVec::new(-10.0, 10.0, 2.0 * TAU), time: 40.0 },
-                Waypoint { pose: StateVec::new(-10.0, 9.0, TAU), time: 41.0 },
-                Waypoint { pose: StateVec::new(-10.0, -10.0, TAU), time: 60.0 },
+                Waypoint { pose: StateVec::new(10.0, 1.0, TAU / 4.0), time: 11.0 },
+                Waypoint { pose: StateVec::new(10.0, 10.0, TAU / 4.0), time: 20.0 },
+                Waypoint { pose: StateVec::new(9.0, 10.0, TAU / 2.0), time: 21.0 },
+                Waypoint { pose: StateVec::new(-10.0, 10.0, TAU / 2.0), time: 40.0 },
+                Waypoint { pose: StateVec::new(-10.0, 9.0, TAU / 4.0), time: 41.0 },
+                Waypoint { pose: StateVec::new(-10.0, -10.0, TAU / 4.0), time: 60.0 },
             ], 0.1,
         )));
 }
 
 fn tick(time: Res<Time>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &mut Trajectory)>) {
     for (mut robot, mut transform, mut controller, mut trajectory) in &mut query {
+        let mut robot: Mut<Robot> = robot;
+        let mut transform: Mut<Transform> = transform;
+
         let u = controller.0.control(&trajectory.0, robot.0.x, time.seconds_since_startup() as f32);
         robot.0.x = robot.0.tick(u, time.delta_seconds());
+        transform.translation = Vec3::new(robot.0.x.x, robot.0.x.y, 0.0);
     }
 }
