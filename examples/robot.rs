@@ -69,6 +69,7 @@ fn tick(time: Res<Time>, mut query: Query<(&mut Robot, &mut Transform, &mut Cont
         let mut transform: Mut<Transform> = transform;
 
         let u = controller.0.control(&trajectory.0, robot.0.x, time.seconds_since_startup());
+        println!("{}", u);
         robot.0.x = robot.0.tick(u, time.delta_seconds_f64());
         transform.translation = Vec3::new(robot.0.x.x as f32, robot.0.x.y as f32, 0.0);
     }

@@ -1,7 +1,7 @@
 use nalgebra::{Dim, DMatrix, Matrix, RawStorage, Scalar};
 use num_traits::Zero;
 
-pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: Vec<DMatrix<T>>) -> DMatrix<T> {
+pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: &[DMatrix<T>]) -> DMatrix<T> {
     let total_rows = matrices.iter().map(DMatrix::nrows).sum();
     let total_cols = matrices.iter().map(DMatrix::ncols).sum();
     let mut block_diagonal_matrix = DMatrix::zeros(total_rows, total_cols);
@@ -35,7 +35,7 @@ pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, v: usize, h: usize) -> DMatr
     })
 }
 
-pub fn horizontal_stack<T, R, C, S>(matrices: Vec<Matrix<T, R, C, S>>) -> DMatrix<T> where
+pub fn horizontal_stack<T, R, C, S>(matrices: &[Matrix<T, R, C, S>]) -> DMatrix<T> where
     T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
     assert!(matrices.len() > 0);
     let nr = matrices[0].nrows();
@@ -45,12 +45,12 @@ pub fn horizontal_stack<T, R, C, S>(matrices: Vec<Matrix<T, R, C, S>>) -> DMatri
     })
 }
 
-pub fn vertical_stack<T, R, C, S>(matrices: Vec<Matrix<T, R, C, S>>) -> DMatrix<T> where
+pub fn vertical_stack<T, R, C, S>(matrices: &[Matrix<T, R, C, S>]) -> DMatrix<T> where
     T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
     assert!(matrices.len() > 0);
     let nr = matrices[0].nrows();
     let nc = matrices[0].ncols();
     DMatrix::from_fn(nr * matrices.len(), nc, |r, c| {
-        matrices[r / nr][(r & nr, c)].clone()
+        matrices[r / nr][(r % nr, c)].clone()
     })
 }

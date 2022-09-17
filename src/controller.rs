@@ -1,11 +1,11 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use nalgebra::{DMatrix, Matrix3};
-use osqp::{CscMatrix, Settings};
+use nalgebra::{DMatrix, DVector, Matrix3};
+use osqp::{CscMatrix, Problem, Settings};
 use splines::{Interpolation, Key, Spline};
 
-use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile};
+use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile, vertical_stack};
 use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
@@ -55,18 +55,17 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         // The weights are exponential as we get further out so that we converge
         let mut Q = into_dynamic(Q);
         let Q_horizon = diagonal_block_matrix(
-            repeat_with(|| {
+            &repeat_with(|| {
                 let Q_temp = Q.clone();
                 Q *= 2.0;
                 Q_temp
-            }).take(horizon_count).collect()
+            }).take(horizon_count).collect::<Vec<_>>()
         );
         // Create the velocity constraint matrices
         let M = horizon_count * 2;
-        let mut G = DMatrix::from_element(M * 2, M, 0.0);
         let I = DMatrix::identity(M, M);
-        G.index_mut((..M, ..M)).copy_from(&I);
-        G.index_mut((M..M * 2, ..M)).copy_from(&-I);
+        let nI = -&I;
+        let G = vertical_stack(&[I, nI]);
         let h = tile(max_velocity, horizon_count * 2, 1);
         MpcController {
             dt,
@@ -81,41 +80,61 @@ TimedPathController<Path, System> for MpcController<Path, System> {
     }
 
     fn control(&self, path: &Path, x: StateVec, t: f64) -> InputVec {
-        let target_states = horizontal_stack(path.horizon_states(t, self.horizon_count));
+        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count));
 
         let system = System::new(x, self.previous_u, self.dt);
         let (A, B) = system.get_system();
 
         let alpha = horizontal_stack(
-            (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+            &(0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
                 *A_exp *= &A;
                 Some(*A_exp * &x)
-            }).collect()
+            }).collect::<Vec<_>>()
         );
 
-        let R_row = horizontal_stack(
-            (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+        // Compute final block row - block rows above are subsets
+        let R_final_row = horizontal_stack(
+            &(0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
                 let next = *A_exp * &B;
                 *A_exp *= &A;
                 Some(next)
-            }).collect()
+            }).collect::<Vec<_>>()
         );
-        let R = R_row.clone_owned();
+        // Create block triangular matrix
+        let R = DMatrix::from_fn(self.horizon_count * B.nrows(), R_final_row.ncols(), |r, c| {
+            let ir = r / B.nrows();
+            let ic = c / B.ncols();
+            if ic + (self.horizon_count - ir) < self.horizon_count {
+                0.0
+            } else {
+                R_final_row[(r % B.nrows(), c % B.ncols())]
+            }
+        });
+
+        // let R = tile(R_final_row, self.horizon_count, 1).upper_triangle();
 
         let P = &R.transpose() * &self.Q * &R;
         let goal_diff = &alpha - &target_states;
-        let goal_diff_flattened = horizontal_stack(goal_diff.row_iter().collect());
+        let goal_diff_flattened = horizontal_stack(&goal_diff.row_iter().collect::<Vec<_>>());
         let q = &goal_diff_flattened * (&self.Q * &R);
 
-        println!("{}, {}, {}", R, P, q);
+        let P = CscMatrix::from_column_iter_dense(P.nrows(), P.ncols(), P.iter().cloned()).into_upper_tri();
+        let G = CscMatrix::from_column_iter_dense(self.G.nrows(), self.G.ncols(), self.G.iter().cloned());
 
-        let P = CscMatrix::from_column_iter_dense(P.nrows(), P.ncols(), P.iter().cloned());
+        let settings = Settings::default().verbose(false);
 
-        let settings = Settings::default().verbose(true);
+        let control_min_constraint = DVector::zeros(self.h.nrows());
 
-        // let mut prob = Problem::new(P, q, self.G, self.h, &settings).expect("Failed to setup problem");
+        let mut problem = Problem::new(P, q.as_slice(), G, control_min_constraint.as_slice(), self.h.as_slice(), &settings).expect("Failed to setup problem");
 
-        InputVec::zeros()
+        let input = problem.solve();
+
+        match input.x() {
+            Some(x) => {
+                InputVec::from_column_slice(x)
+            }
+            None => InputVec::zeros()
+        }
     }
 }
 
