@@ -2,10 +2,10 @@ use std::iter::repeat_with;
 use std::marker::PhantomData;
 
 use nalgebra::{DMatrix, DVector, Matrix3};
-use osqp::{CscMatrix, Problem, Settings};
+use osqp::{Problem, Settings};
 use splines::{Interpolation, Key, Spline};
 
-use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile, vertical_stack};
+use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, into_sparse, tile, vertical_stack};
 use crate::robot::{InputVec, LinearSystem, StateVec, SystemMat};
 
 // Q
@@ -53,7 +53,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         // Build a big block diagonal matrix that encompasses the entire horizon
         // Each "block" in the diagonal that is copied represents one state in the horizon
         // The weights are exponential as we get further out so that we converge
-        let mut Q = into_dynamic(Q);
+        let mut Q = into_dynamic(&Q);
         let Q_horizon = diagonal_block_matrix(
             &repeat_with(|| {
                 let Q_temp = Q.clone();
@@ -61,12 +61,12 @@ TimedPathController<Path, System> for MpcController<Path, System> {
                 Q_temp
             }).take(horizon_count).collect::<Vec<_>>()
         );
-        // Create the velocity constraint matrices
+        // Create the control constraint matrices
         let M = horizon_count * 2;
         let I = DMatrix::identity(M, M);
         let nI = -&I;
         let G = vertical_stack(&[I, nI]);
-        let h = tile(max_velocity, horizon_count * 2, 1);
+        let h = tile(&max_velocity, horizon_count * 2, 1);
         MpcController {
             dt,
             horizon,
@@ -80,7 +80,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
     }
 
     fn control(&mut self, path: &Path, x: StateVec, t: f64) -> InputVec {
-        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count)) * 0.5;
+        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count));
 
         let system = System::new(x, self.previous_control, self.dt);
         let (A, B) = system.get_system();
@@ -118,25 +118,27 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let goal_diff_flattened = vertical_stack(&goal_diff.column_iter().collect::<Vec<_>>()).transpose();
         let q = &goal_diff_flattened * (&self.Q * &R);
 
-        println!("{} {} {} {} {}", R, P, q, self.G, self.h);
-
-        let P = CscMatrix::from_column_iter_dense(P.nrows(), P.ncols(), P.iter().cloned()).into_upper_tri();
-        let G = CscMatrix::from_column_iter_dense(self.G.nrows(), self.G.ncols(), self.G.iter().cloned());
+        let P_upper_tri = P.upper_triangle();
 
         let control_min_constraint = DVector::zeros(self.h.nrows());
         let control_max_constraint = &self.h;
 
+        // Find chain of control inputs which minimize error w.r.t. path over the entire horizon
         let mut minimize_horizon_error_problem = Problem::new(
-            P, q.as_slice(), G,
-            control_min_constraint.as_slice(), control_max_constraint.as_slice(),
+            into_sparse(&P_upper_tri),
+            q.as_slice(),
+            into_sparse(&self.G),
+            control_min_constraint.as_slice(),
+            control_max_constraint.as_slice(),
             &Settings::default().verbose(false),
         ).expect("Failed to setup problem");
 
-        let control_solution = minimize_horizon_error_problem.solve();
+        let minimize_horizon_error_solution = minimize_horizon_error_problem.solve();
 
-        let next_control = match control_solution.x() {
-            Some(x) => {
-                InputVec::from_column_slice(&x[..2])
+        let next_control = match minimize_horizon_error_solution.x() {
+            Some(optimal_control_over_horizon) => {
+                // Only take the most recent control from the chain
+                InputVec::from_column_slice(&optimal_control_over_horizon[..2])
             }
             None => InputVec::zeros()
         };
@@ -158,8 +160,7 @@ impl TimedPath for LinearTimedPath {
 
     fn horizon_states(&self, t: f64, N: usize) -> Vec<StateVec> {
         (0..N)
-            .map(|i| i as f64)
-            .map(|i| self.spline.sample(t + i * self.dt).expect("Failed to interpolate"))
+            .map(|i| self.spline.sample(t + i as f64 * self.dt).expect("Failed to interpolate"))
             .collect()
     }
 }

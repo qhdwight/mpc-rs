@@ -1,5 +1,17 @@
 use nalgebra::{Dim, DMatrix, Matrix, RawStorage, Scalar};
 use num_traits::Zero;
+use osqp::CscMatrix;
+
+pub fn into_dynamic<T, R, C, S>(matrix: &Matrix<T, R, C, S>) -> DMatrix<T> where
+    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
+    DMatrix::from_fn(matrix.nrows(), matrix.ncols(), |r, c| matrix[(r, c)].clone())
+}
+
+pub fn into_sparse<R, C, S>(matrix: &Matrix<f64, R, C, S>) -> CscMatrix<'_> where
+    R: Dim, C: Dim, S: RawStorage<f64, R, C> {
+    let temp = matrix.row_iter().map(|r| r.iter().cloned().collect::<Vec<_>>()).collect::<Vec<_>>();
+    CscMatrix::from(&temp)
+}
 
 pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: &[DMatrix<T>]) -> DMatrix<T> {
     let total_rows = matrices.iter().map(DMatrix::nrows).sum();
@@ -21,12 +33,7 @@ pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: &[DMatrix<T>]) -> DMatr
     block_diagonal_matrix
 }
 
-pub fn into_dynamic<T, R, C, S>(matrix: Matrix<T, R, C, S>) -> DMatrix<T> where
-    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
-    DMatrix::from_fn(matrix.nrows(), matrix.ncols(), |r, c| matrix[(r, c)].clone())
-}
-
-pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, v: usize, h: usize) -> DMatrix<T> where
+pub fn tile<T, R, C, S>(matrix: &Matrix<T, R, C, S>, v: usize, h: usize) -> DMatrix<T> where
     T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
     let nr = matrix.nrows();
     let nc = matrix.ncols();

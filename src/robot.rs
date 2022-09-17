@@ -34,7 +34,7 @@ impl System for NonlinearUnicycleSystem {
         let mut x = self.x.clone();
         x[0] += u[0] * f64::cos(self.x[2]) * dt; // X
         x[1] += u[0] * f64::sin(self.x[2]) * dt; // Y
-        x[2] += u[1] * dt;                              // θ
+        x[2] += u[1] * dt;                            // θ
         x
     }
 
@@ -70,4 +70,3 @@ impl LinearSystem for LinearUnicycleSystem {
         (self.A, self.B)
     }
 }
-
