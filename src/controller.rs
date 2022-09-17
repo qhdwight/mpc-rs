@@ -2,7 +2,7 @@ use std::iter::repeat_with;
 use std::marker::PhantomData;
 
 use nalgebra::{DMatrix, Matrix3};
-use osqp::{CscMatrix, Problem, Settings};
+use osqp::{CscMatrix, Settings};
 use splines::{Interpolation, Key, Spline};
 
 use crate::math::{diagonal_block_matrix, horizontal_stack, into_dynamic, tile};
@@ -93,27 +93,27 @@ TimedPathController<Path, System> for MpcController<Path, System> {
             }).collect()
         );
 
-        let R_diag_iter = (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
-            let next = *A_exp * &B;
-            *A_exp *= &A;
-            Some(next)
-        });
-        let mut R_diag = R_diag_iter.map(into_dynamic).collect::<Vec<_>>();
-        R_diag.reverse();
-        let R = diagonal_block_matrix(R_diag);
+        let R_row = horizontal_stack(
+            (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+                let next = *A_exp * &B;
+                *A_exp *= &A;
+                Some(next)
+            }).collect()
+        );
+        let R = R_row.clone_owned();
 
         let P = &R.transpose() * &self.Q * &R;
-        let q = (&alpha - &target_states);
+        let goal_diff = &alpha - &target_states;
+        let goal_diff_flattened = horizontal_stack(goal_diff.row_iter().collect());
+        let q = &goal_diff_flattened * (&self.Q * &R);
 
-        // let P = CscMatrix::from_row_iter_dense(P.nrows(), P.ncols(), P.iter());
+        println!("{}, {}, {}", R, P, q);
 
-        // CscMatrix::from(&[]);
-        //
-        // let settings = Settings::default().verbose(true);
-        //
+        let P = CscMatrix::from_column_iter_dense(P.nrows(), P.ncols(), P.iter().cloned());
+
+        let settings = Settings::default().verbose(true);
+
         // let mut prob = Problem::new(P, q, self.G, self.h, &settings).expect("Failed to setup problem");
-        //
-        // println!("{}", P);
 
         InputVec::zeros()
     }

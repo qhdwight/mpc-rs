@@ -1,4 +1,4 @@
-use nalgebra::{Dim, DimName, DMatrix, Matrix, RawStorage, Scalar};
+use nalgebra::{Dim, DMatrix, Matrix, RawStorage, Scalar};
 use num_traits::Zero;
 
 pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: Vec<DMatrix<T>>) -> DMatrix<T> {
@@ -13,7 +13,7 @@ pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: Vec<DMatrix<T>>) -> DMa
         let next_c = c + matrix.ncols();
         block_diagonal_matrix.index_mut((
             r..next_r,
-            c..next_c
+            c..next_c,
         )).copy_from(&matrix);
         r = next_r;
         c = next_c;
@@ -22,44 +22,35 @@ pub fn diagonal_block_matrix<T: Scalar + Zero>(matrices: Vec<DMatrix<T>>) -> DMa
 }
 
 pub fn into_dynamic<T, R, C, S>(matrix: Matrix<T, R, C, S>) -> DMatrix<T> where
-    T: Scalar + Zero,
-    R: Dim + DimName, C: Dim + DimName,
-    S: RawStorage<T, R, C> {
-    let mut dynamic_matrix = DMatrix::zeros(matrix.nrows(), matrix.ncols());
-    dynamic_matrix.copy_from(&matrix);
-    dynamic_matrix
+    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
+    DMatrix::from_fn(matrix.nrows(), matrix.ncols(), |r, c| matrix[(r, c)].clone())
 }
 
-pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, r: usize, c: usize) -> DMatrix<T> where
-    T: Scalar + Zero,
-    R: Dim + DimName, C: Dim + DimName,
-    S: RawStorage<T, R, C> {
+pub fn tile<T, R, C, S>(matrix: Matrix<T, R, C, S>, v: usize, h: usize) -> DMatrix<T> where
+    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
     let nr = matrix.nrows();
     let nc = matrix.ncols();
-    let mut tiled_matrix: DMatrix<T> = DMatrix::zeros(nr * r, nc * c);
-    for ir in 0..r {
-        for ic in 0..c {
-            tiled_matrix.index_mut((
-                ir * nr..(ir + 1) * nr,
-                ic * nc..(ic + 1) * nc,
-            )).copy_from(&matrix);
-        }
-    }
-    tiled_matrix
+    DMatrix::from_fn(nr * v, nc * h, |r, c| {
+        matrix[(r % nr, c % nc)].clone()
+    })
 }
 
 pub fn horizontal_stack<T, R, C, S>(matrices: Vec<Matrix<T, R, C, S>>) -> DMatrix<T> where
-    T: Scalar + Zero,
-    R: Dim + DimName, C: Dim + DimName,
-    S: RawStorage<T, R, C> {
-    let max_rows = matrices.iter().map(|m| m.nrows()).max().expect("No max");
-    let total_cols = matrices.iter().map(|m| m.ncols()).sum();
-    let mut horizontal_matrix: DMatrix<T> = DMatrix::zeros(max_rows, total_cols);
-    let mut c = 0;
-    for matrix in matrices {
-        let next_c = c + matrix.ncols();
-        horizontal_matrix.index_mut((.., c..next_c)).copy_from(&matrix);
-        c = next_c;
-    }
-    horizontal_matrix
+    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
+    assert!(matrices.len() > 0);
+    let nr = matrices[0].nrows();
+    let nc = matrices[0].ncols();
+    DMatrix::from_fn(nr, nc * matrices.len(), |r, c| {
+        matrices[c / nc][(r, c % nc)].clone()
+    })
+}
+
+pub fn vertical_stack<T, R, C, S>(matrices: Vec<Matrix<T, R, C, S>>) -> DMatrix<T> where
+    T: Scalar + Zero, R: Dim, C: Dim, S: RawStorage<T, R, C> {
+    assert!(matrices.len() > 0);
+    let nr = matrices[0].nrows();
+    let nc = matrices[0].ncols();
+    DMatrix::from_fn(nr * matrices.len(), nc, |r, c| {
+        matrices[r / nr][(r & nr, c)].clone()
+    })
 }
