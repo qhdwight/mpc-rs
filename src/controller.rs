@@ -93,13 +93,13 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         );
 
         // Compute final block row - block rows above are subsets
-        let R_final_row = horizontal_stack(
-            &(0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
-                let next = *A_exp * &B;
-                *A_exp *= &A;
-                Some(next)
-            }).collect::<Vec<_>>()
-        );
+        let mut R_final_row_vec = (0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
+            let next = *A_exp * &B;
+            *A_exp *= &A;
+            Some(next)
+        }).collect::<Vec<_>>();
+        R_final_row_vec.reverse();
+        let R_final_row = horizontal_stack(&R_final_row_vec);
         // Create block triangular matrix
         let R = DMatrix::from_fn(self.horizon_count * B.nrows(), R_final_row.ncols(), |r, c| {
             let ir = r / B.nrows();
@@ -119,6 +119,8 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let q = &goal_diff_flattened * (&self.Q * &R);
 
         let P_upper_tri = P.upper_triangle();
+
+        println!("{}", alpha);
 
         let control_min_constraint = DVector::zeros(self.h.nrows());
         let control_max_constraint = &self.h;

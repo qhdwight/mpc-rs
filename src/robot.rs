@@ -2,7 +2,7 @@ use nalgebra::{Matrix2x1, Matrix3, Matrix3x1, Matrix3x2};
 
 // x: [X, Y, θ]ᵀ
 pub type StateVec = Matrix3x1<f64>;
-// u: [v, θ]ᵀ
+// u: [v, dθ]ᵀ
 pub type InputVec = Matrix2x1<f64>;
 // A
 pub type SystemMat = Matrix3<f64>;
