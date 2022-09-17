@@ -17,11 +17,11 @@ struct Trajectory(LinearTimedPath);
 
 #[derive(Default)]
 struct SimTime {
-    time: f64,
+    elapsed_seconds: f64,
 }
 
-const TICK_DELTA: f64 = 0.05;
-const HORIZON: f64 = 0.2;
+const TICK_DELTA_SECONDS: f64 = 0.05;
+const HORIZON_SECONDS: f64 = 0.2;
 
 fn main() {
     App::new()
@@ -54,7 +54,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             x: StateVec::new(0.0, 0.0, 0.0)
         }))
         .insert(Controller(MpcController::new(
-            HORIZON, TICK_DELTA, InputVec::new(1.0, 0.3), ConstraintMat::new(
+            HORIZON_SECONDS, TICK_DELTA_SECONDS,
+            InputVec::new(-1.0, -0.3),
+            InputVec::new(1.0, 0.3),
+            ConstraintMat::new(
                 1.0, 0.0, 0.0,
                 0.0, 1.0, 0.0,
                 0.0, 0.0, 50.0,
@@ -68,22 +71,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 Waypoint { pose: StateVec::new(10.0, 10.0, TAU / 4.0), time: 20.0 },
                 Waypoint { pose: StateVec::new(9.0, 10.0, TAU / 2.0), time: 21.0 },
                 Waypoint { pose: StateVec::new(-10.0, 10.0, TAU / 2.0), time: 40.0 },
-                Waypoint { pose: StateVec::new(-10.0, 9.0, TAU / 4.0), time: 41.0 },
-                Waypoint { pose: StateVec::new(-10.0, -10.0, TAU / 4.0), time: 60.0 },
-            ], TICK_DELTA,
+                Waypoint { pose: StateVec::new(-10.0, 9.0, 3.0 * TAU / 4.0), time: 41.0 },
+                Waypoint { pose: StateVec::new(-10.0, -10.0, 3.0 * TAU / 4.0), time: 60.0 },
+            ], TICK_DELTA_SECONDS,
         )));
 }
 
 fn tick(mut time: ResMut<SimTime>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &Trajectory)>) {
     for (mut robot, mut transform, mut controller, trajectory) in &mut query {
-        let mut robot: Mut<Robot> = robot;
-        let mut transform: Mut<Transform> = transform;
-
-        let u = controller.0.control(&trajectory.0, robot.0.x, time.time);
-        robot.0.x = robot.0.tick(u, TICK_DELTA);
-        time.time += TICK_DELTA;
-        let robot_pose = &robot.0.x;
-        transform.translation = 20.0 * Vec3::new(robot_pose.x as f32, robot_pose.y as f32, 0.0);
-        transform.rotation = Quat::from_axis_angle(Vec3::Z, robot_pose.z as f32);
+        let u = controller.0.control(&trajectory.0, robot.0.x, time.elapsed_seconds);
+        robot.0.x = robot.0.tick(u, TICK_DELTA_SECONDS);
+        time.elapsed_seconds += TICK_DELTA_SECONDS;
+        let pose = &robot.0.x;
+        transform.translation = 20.0 * Vec3::new(pose.x as f32, pose.y as f32, 0.0);
+        transform.rotation = Quat::from_axis_angle(Vec3::Z, pose.z as f32);
     }
 }

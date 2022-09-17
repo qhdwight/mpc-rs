@@ -19,7 +19,7 @@ pub trait TimedPath {
 }
 
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
-    fn new(horizon: f64, dt: f64, max_velocity: InputVec, Q: ConstraintMat) -> Self;
+    fn new(horizon: f64, dt: f64, min_input: InputVec, max_input: InputVec, Q: ConstraintMat) -> Self;
 
     fn control(&mut self, path: &Path, x: StateVec, t: f64) -> InputVec;
 }
@@ -36,11 +36,10 @@ pub struct LinearTimedPath {
 
 pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     dt: f64,
-    horizon: f64,
     horizon_count: usize,
     Q: DMatrix<f64>,
-    input_min: DMatrix<f64>,
-    input_max: DMatrix<f64>,
+    min_input_over_horizon: DMatrix<f64>,
+    max_input_over_horizon: DMatrix<f64>,
     input_constraints: DMatrix<f64>,
     previous_input: InputVec,
     phantoms: PhantomData<(Path, System)>,
@@ -48,7 +47,7 @@ pub struct MpcController<Path: TimedPath, System: LinearSystem> {
 
 impl<Path: TimedPath, System: LinearSystem>
 TimedPathController<Path, System> for MpcController<Path, System> {
-    fn new(horizon: f64, dt: f64, max_input: InputVec, Q: ConstraintMat) -> Self {
+    fn new(horizon: f64, dt: f64, min_input: InputVec, max_input: InputVec, Q: ConstraintMat) -> Self {
         let horizon_count = f64::floor(horizon / dt) as usize;
 
         // Build a big block diagonal matrix that encompasses the entire horizon
@@ -64,16 +63,15 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         );
         // Create the input constraint matrices
         let n_input_rows = horizon_count * max_input.nrows();
-        let input_max = tile(&max_input, horizon_count, 1);
-        let input_min = -&input_max;
+        let max_input_over_horizon = tile(&max_input, horizon_count, 1);
+        let min_input_over_horizon = tile(&min_input, horizon_count, 1);
         let input_constraints = DMatrix::identity(n_input_rows, n_input_rows);
         MpcController {
             dt,
-            horizon,
             horizon_count,
             Q: Q_horizon,
-            input_min,
-            input_max,
+            min_input_over_horizon,
+            max_input_over_horizon,
             input_constraints,
             previous_input: InputVec::zeros(),
             phantoms: PhantomData,
@@ -126,8 +124,8 @@ TimedPathController<Path, System> for MpcController<Path, System> {
             into_sparse(&P_upper_tri),
             q.as_slice(),
             into_sparse(&self.input_constraints),
-            self.input_min.as_slice(),
-            self.input_max.as_slice(),
+            self.min_input_over_horizon.as_slice(),
+            self.max_input_over_horizon.as_slice(),
             &Settings::default().verbose(false),
         ).expect("Failed to setup problem");
 
