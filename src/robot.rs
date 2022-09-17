@@ -38,7 +38,7 @@ impl System for NonlinearUnicycleSystem {
         x
     }
 
-    fn new(x: StateVec, u: InputVec, dt: f64) -> Self {
+    fn new(x: StateVec, _u: InputVec, _dt: f64) -> Self {
         NonlinearUnicycleSystem { x }
     }
 }

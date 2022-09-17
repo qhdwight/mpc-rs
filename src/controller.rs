@@ -21,7 +21,7 @@ pub trait TimedPath {
 pub trait TimedPathController<Path: TimedPath, System: LinearSystem> {
     fn new(horizon: f64, dt: f64, max_velocity: InputVec, Q: ConstraintMat) -> Self;
 
-    fn control(&self, path: &Path, x: StateVec, t: f64) -> InputVec;
+    fn control(&mut self, path: &Path, x: StateVec, t: f64) -> InputVec;
 }
 
 pub struct Waypoint {
@@ -41,7 +41,7 @@ pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     Q: DMatrix<f64>,
     G: DMatrix<f64>,
     h: DMatrix<f64>,
-    previous_u: InputVec,
+    previous_control: InputVec,
     phantoms: PhantomData<(Path, System)>,
 }
 
@@ -74,15 +74,15 @@ TimedPathController<Path, System> for MpcController<Path, System> {
             Q: Q_horizon,
             G,
             h,
-            previous_u: InputVec::zeros(),
+            previous_control: InputVec::zeros(),
             phantoms: PhantomData,
         }
     }
 
-    fn control(&self, path: &Path, x: StateVec, t: f64) -> InputVec {
-        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count));
+    fn control(&mut self, path: &Path, x: StateVec, t: f64) -> InputVec {
+        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count)) * 0.5;
 
-        let system = System::new(x, self.previous_u, self.dt);
+        let system = System::new(x, self.previous_control, self.dt);
         let (A, B) = system.get_system();
 
         let alpha = horizontal_stack(
@@ -104,7 +104,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         let R = DMatrix::from_fn(self.horizon_count * B.nrows(), R_final_row.ncols(), |r, c| {
             let ir = r / B.nrows();
             let ic = c / B.ncols();
-            if ic + (self.horizon_count - ir) < self.horizon_count {
+            if (self.horizon_count - ic) + ir < self.horizon_count {
                 0.0
             } else {
                 R_final_row[(r % B.nrows(), c % B.ncols())]
@@ -115,26 +115,35 @@ TimedPathController<Path, System> for MpcController<Path, System> {
 
         let P = &R.transpose() * &self.Q * &R;
         let goal_diff = &alpha - &target_states;
-        let goal_diff_flattened = horizontal_stack(&goal_diff.row_iter().collect::<Vec<_>>());
+        let goal_diff_flattened = vertical_stack(&goal_diff.column_iter().collect::<Vec<_>>()).transpose();
         let q = &goal_diff_flattened * (&self.Q * &R);
+
+        println!("{} {} {} {} {}", R, P, q, self.G, self.h);
 
         let P = CscMatrix::from_column_iter_dense(P.nrows(), P.ncols(), P.iter().cloned()).into_upper_tri();
         let G = CscMatrix::from_column_iter_dense(self.G.nrows(), self.G.ncols(), self.G.iter().cloned());
 
-        let settings = Settings::default().verbose(false);
-
         let control_min_constraint = DVector::zeros(self.h.nrows());
+        let control_max_constraint = &self.h;
 
-        let mut problem = Problem::new(P, q.as_slice(), G, control_min_constraint.as_slice(), self.h.as_slice(), &settings).expect("Failed to setup problem");
+        let mut minimize_horizon_error_problem = Problem::new(
+            P, q.as_slice(), G,
+            control_min_constraint.as_slice(), control_max_constraint.as_slice(),
+            &Settings::default().verbose(false),
+        ).expect("Failed to setup problem");
 
-        let input = problem.solve();
+        let control_solution = minimize_horizon_error_problem.solve();
 
-        match input.x() {
+        let next_control = match control_solution.x() {
             Some(x) => {
-                InputVec::from_column_slice(x)
+                InputVec::from_column_slice(&x[..2])
             }
             None => InputVec::zeros()
-        }
+        };
+
+        self.previous_control = next_control;
+
+        next_control
     }
 }
 
