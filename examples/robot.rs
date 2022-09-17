@@ -43,7 +43,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn_bundle(Camera2dBundle::default());
     commands.spawn_bundle(SpriteBundle {
         sprite: Sprite {
-            custom_size: Some(Vec2::new(16.0, 16.0)),
+            custom_size: Some(Vec2::new(32.0, 32.0)),
             ..default()
         },
         texture: asset_server.load("robot.png"),
@@ -84,6 +84,6 @@ fn tick(mut time: ResMut<SimTime>, mut query: Query<(&mut Robot, &mut Transform,
         time.elapsed_seconds += TICK_DELTA_SECONDS;
         let pose = &robot.0.x;
         transform.translation = 20.0 * Vec3::new(pose.x as f32, pose.y as f32, 0.0);
-        transform.rotation = Quat::from_axis_angle(Vec3::Z, pose.z as f32);
+        transform.rotation = Quat::from_axis_angle(Vec3::Z, (pose.z - TAU / 4.0) as f32);
     }
 }
