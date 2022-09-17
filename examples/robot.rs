@@ -80,12 +80,8 @@ fn tick(mut time: ResMut<SimTime>, mut query: Query<(&mut Robot, &mut Transform,
         let mut transform: Mut<Transform> = transform;
 
         let u = controller.0.control(&trajectory.0, robot.0.x, time.time);
-        // let u = InputVec::new(-0.01, 0.01);
         robot.0.x = robot.0.tick(u, TICK_DELTA);
-        println!("{}", u);
         time.time += TICK_DELTA;
         transform.translation = 20.0 * Vec3::new(robot.0.x.x as f32, robot.0.x.y as f32, 0.0);
-        // let horizon = trajectory.0.horizon_states(time.time, 4)[0];
-        // transform.translation = 20.0 * Vec3::new(horizon.x as f32, horizon.y as f32, 0.0);
     }
 }

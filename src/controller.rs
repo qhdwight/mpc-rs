@@ -63,10 +63,8 @@ TimedPathController<Path, System> for MpcController<Path, System> {
         );
         // Create the control constraint matrices
         let M = horizon_count * 2;
-        let I = DMatrix::identity(M, M);
-        let nI = -&I;
-        let G = vertical_stack(&[I, nI]);
-        let h = tile(&max_velocity, horizon_count * 2, 1);
+        let G = DMatrix::identity(M, M);
+        let h = tile(&max_velocity, horizon_count, 1);
         MpcController {
             dt,
             horizon,
@@ -122,7 +120,7 @@ TimedPathController<Path, System> for MpcController<Path, System> {
 
         println!("{}", alpha);
 
-        let control_min_constraint = DVector::zeros(self.h.nrows());
+        let control_min_constraint = -&self.h;
         let control_max_constraint = &self.h;
 
         // Find chain of control inputs which minimize error w.r.t. path over the entire horizon

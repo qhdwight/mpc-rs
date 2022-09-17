@@ -20,9 +20,9 @@ pub trait LinearSystem: System {
 }
 
 pub struct LinearUnicycleSystem {
-    x: StateVec,
-    A: SystemMat,
-    B: InputMat,
+    pub x: StateVec,
+    pub A: SystemMat,
+    pub B: InputMat,
 }
 
 pub struct NonlinearUnicycleSystem {
