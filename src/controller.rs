@@ -1,7 +1,7 @@
 use std::iter::repeat_with;
 use std::marker::PhantomData;
 
-use nalgebra::{DMatrix, DVector, Matrix3};
+use nalgebra::{DMatrix, Matrix3};
 use osqp::{Problem, Settings};
 use splines::{Interpolation, Key, Spline};
 
@@ -39,15 +39,16 @@ pub struct MpcController<Path: TimedPath, System: LinearSystem> {
     horizon: f64,
     horizon_count: usize,
     Q: DMatrix<f64>,
-    G: DMatrix<f64>,
-    h: DMatrix<f64>,
-    previous_control: InputVec,
+    input_min: DMatrix<f64>,
+    input_max: DMatrix<f64>,
+    input_constraints: DMatrix<f64>,
+    previous_input: InputVec,
     phantoms: PhantomData<(Path, System)>,
 }
 
 impl<Path: TimedPath, System: LinearSystem>
 TimedPathController<Path, System> for MpcController<Path, System> {
-    fn new(horizon: f64, dt: f64, max_velocity: InputVec, Q: ConstraintMat) -> Self {
+    fn new(horizon: f64, dt: f64, max_input: InputVec, Q: ConstraintMat) -> Self {
         let horizon_count = f64::floor(horizon / dt) as usize;
 
         // Build a big block diagonal matrix that encompasses the entire horizon
@@ -61,29 +62,33 @@ TimedPathController<Path, System> for MpcController<Path, System> {
                 Q_temp
             }).take(horizon_count).collect::<Vec<_>>()
         );
-        // Create the control constraint matrices
-        let M = horizon_count * 2;
-        let G = DMatrix::identity(M, M);
-        let h = tile(&max_velocity, horizon_count, 1);
+        // Create the input constraint matrices
+        let n_input_rows = horizon_count * max_input.nrows();
+        let input_max = tile(&max_input, horizon_count, 1);
+        let input_min = -&input_max;
+        let input_constraints = DMatrix::identity(n_input_rows, n_input_rows);
         MpcController {
             dt,
             horizon,
             horizon_count,
             Q: Q_horizon,
-            G,
-            h,
-            previous_control: InputVec::zeros(),
+            input_min,
+            input_max,
+            input_constraints,
+            previous_input: InputVec::zeros(),
             phantoms: PhantomData,
         }
     }
 
     fn control(&mut self, path: &Path, x: StateVec, t: f64) -> InputVec {
-        let target_states = horizontal_stack(&path.horizon_states(t, self.horizon_count));
+        // TODO: quite a bit of heap allocation in this function... use bump allocator?
 
-        let system = System::new(x, self.previous_control, self.dt);
-        let (A, B) = system.get_system();
+        let goal_states = horizontal_stack(&path.horizon_states(t, self.horizon_count));
 
-        let alpha = horizontal_stack(
+        let system = System::new(x, self.previous_input, self.dt);
+        let (A, B) = system.matrices();
+
+        let predicted_states = horizontal_stack(
             &(0..self.horizon_count).scan(SystemMat::identity(), |A_exp, _| {
                 *A_exp *= &A;
                 Some(*A_exp * &x)
@@ -109,43 +114,36 @@ TimedPathController<Path, System> for MpcController<Path, System> {
             }
         });
 
-        // let R = tile(R_final_row, self.horizon_count, 1).upper_triangle();
-
         let P = &R.transpose() * &self.Q * &R;
-        let goal_diff = &alpha - &target_states;
+        let goal_diff = &predicted_states - &goal_states;
         let goal_diff_flattened = vertical_stack(&goal_diff.column_iter().collect::<Vec<_>>()).transpose();
         let q = &goal_diff_flattened * (&self.Q * &R);
 
         let P_upper_tri = P.upper_triangle();
 
-        println!("{}", alpha);
-
-        let control_min_constraint = -&self.h;
-        let control_max_constraint = &self.h;
-
-        // Find chain of control inputs which minimize error w.r.t. path over the entire horizon
+        // Find chain of inputs which minimize error w.r.t. path over the entire horizon
         let mut minimize_horizon_error_problem = Problem::new(
             into_sparse(&P_upper_tri),
             q.as_slice(),
-            into_sparse(&self.G),
-            control_min_constraint.as_slice(),
-            control_max_constraint.as_slice(),
+            into_sparse(&self.input_constraints),
+            self.input_min.as_slice(),
+            self.input_max.as_slice(),
             &Settings::default().verbose(false),
         ).expect("Failed to setup problem");
 
         let minimize_horizon_error_solution = minimize_horizon_error_problem.solve();
 
-        let next_control = match minimize_horizon_error_solution.x() {
-            Some(optimal_control_over_horizon) => {
-                // Only take the most recent control from the chain
-                InputVec::from_column_slice(&optimal_control_over_horizon[..2])
+        let next_input = match minimize_horizon_error_solution.x() {
+            Some(optimal_input_chain_over_horizon) => {
+                // Only take the most recent input from the chain
+                InputVec::from_column_slice(&optimal_input_chain_over_horizon[..2])
             }
             None => InputVec::zeros()
         };
 
-        self.previous_control = next_control;
+        self.previous_input = next_input;
 
-        next_control
+        next_input
     }
 }
 

@@ -16,7 +16,7 @@ pub trait System {
 }
 
 pub trait LinearSystem: System {
-    fn get_system(&self) -> (SystemMat, InputMat);
+    fn matrices(&self) -> (SystemMat, InputMat);
 }
 
 pub struct LinearUnicycleSystem {
@@ -66,7 +66,7 @@ impl System for LinearUnicycleSystem {
 }
 
 impl LinearSystem for LinearUnicycleSystem {
-    fn get_system(&self) -> (SystemMat, InputMat) {
+    fn matrices(&self) -> (SystemMat, InputMat) {
         (self.A, self.B)
     }
 }

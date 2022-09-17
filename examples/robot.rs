@@ -82,6 +82,8 @@ fn tick(mut time: ResMut<SimTime>, mut query: Query<(&mut Robot, &mut Transform,
         let u = controller.0.control(&trajectory.0, robot.0.x, time.time);
         robot.0.x = robot.0.tick(u, TICK_DELTA);
         time.time += TICK_DELTA;
-        transform.translation = 20.0 * Vec3::new(robot.0.x.x as f32, robot.0.x.y as f32, 0.0);
+        let robot_pose = &robot.0.x;
+        transform.translation = 20.0 * Vec3::new(robot_pose.x as f32, robot_pose.y as f32, 0.0);
+        transform.rotation = Quat::from_axis_angle(Vec3::Z, robot_pose.z as f32);
     }
 }
