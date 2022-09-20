@@ -156,7 +156,7 @@ impl TimedPath for LinearTimedPath {
 
     fn horizon_states(&self, t: f64, N: usize) -> Vec<StateVec> {
         (0..N)
-            .map(|i| self.spline.sample(t + i as f64 * self.dt).expect("Failed to interpolate"))
+            .map(|i| self.spline.clamped_sample(t + i as f64 * self.dt).expect("Failed to sample"))
             .collect()
     }
 }
