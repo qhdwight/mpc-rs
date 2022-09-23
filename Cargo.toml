@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.8.1", default-features = false, features = [
-    "bevy_sprite", "bevy_render", "bevy_core_pipeline", "bevy_asset", "png", "bevy_winit"
+    "bevy_sprite", "bevy_render", "bevy_core_pipeline", "bevy_asset", "png", "bevy_winit", "x11"
 ] }
 bevy_prototype_lyon = "0.6.0"
 nalgebra = "0.31.1"
