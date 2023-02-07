@@ -29,3 +29,7 @@ See: https://web.stanford.edu/class/archive/ee/ee392m/ee392m.1056/Lecture14_MPC.
 [robot.rs](./src/robot.rs) Kinematic modeling of unicycle robot
 
 [math.rs](./src/math.rs) Misc. features for [nalgebra](https://nalgebra.org/) since it is relatively new
+
+### Acknowledgments 
+
+This repository was inspired by https://github.com/niwhsa9/mpc-trajectory-tracker
