@@ -1,11 +1,15 @@
 use std::f64::consts::TAU;
 
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+};
 use bevy_prototype_lyon::prelude::*;
 
-use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController, Waypoint};
-use mpc_rs::robot::{InputVec, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec, System};
+use mpc_rs::{
+    controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController, Waypoint},
+    robot::{InputVec, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec, System},
+};
 
 #[derive(Component)]
 struct Robot(NonlinearUnicycleSystem, Vec<Vec2>);
@@ -16,7 +20,7 @@ struct Controller(MpcController<LinearTimedPath, LinearUnicycleSystem>);
 #[derive(Component)]
 struct Trajectory(LinearTimedPath);
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct Simulation {
     elapsed_seconds: f64,
 }
@@ -30,13 +34,15 @@ const SPRITE_SIZE: f32 = 32.0;
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(WindowDescriptor {
-            title: "Robot Simulator".to_string(),
-            ..default()
-        })
         .add_startup_system(setup)
         .add_system(tick)
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Robot Simulator".into(),
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugin(ShapePlugin)
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
@@ -63,24 +69,27 @@ fn setup(
     for waypoint in &waypoints {
         trajectory_path_builder.line_to(WORLD_TO_SCREEN * Vec2::new(waypoint.pose.x as f32, waypoint.pose.y as f32));
     }
-    commands.spawn_bundle(GeometryBuilder::build_as(
-        &trajectory_path_builder.build(),
-        DrawMode::Stroke(StrokeMode::new(Color::GREEN, 1.0)),
-        Transform::default(),
-    ));
-    commands.spawn_bundle(Camera2dBundle::default());
-    commands.spawn_bundle(SpriteBundle {
-        sprite: Sprite {
-            custom_size: Some(Vec2::new(SPRITE_SIZE, SPRITE_SIZE)),
+    commands.spawn((
+        ShapeBundle {
+            path: GeometryBuilder::build_as(&trajectory_path_builder.build()),
             ..default()
         },
-        texture: asset_server.load("robot.png"),
-        ..default()
-    })
-        .insert(Robot(NonlinearUnicycleSystem {
+        Fill::color(Color::GREEN),
+    ));
+    commands.spawn(Camera2dBundle::default());
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(SPRITE_SIZE, SPRITE_SIZE)),
+                ..default()
+            },
+            texture: asset_server.load("robot.png"),
+            ..default()
+        },
+        Robot(NonlinearUnicycleSystem {
             x: StateVec::new(0.0, 0.0, 0.0)
-        }, Vec::new()))
-        .insert(Controller(MpcController::new(
+        }, Vec::new()),
+        Controller(MpcController::new(
             HORIZON_SECONDS, TICK_DELTA_SECONDS,
             InputVec::new(-1.0, -0.3),
             InputVec::new(1.0, 0.3),
@@ -89,10 +98,11 @@ fn setup(
                 0.0, 1.0, 0.0,
                 0.0, 0.0, 50.0,
             ),
-        )))
-        .insert(Trajectory(LinearTimedPath::new(
+        )),
+        Trajectory(LinearTimedPath::new(
             waypoints, TICK_DELTA_SECONDS,
-        )));
+        ))
+    ));
 }
 
 fn tick(mut time: ResMut<Simulation>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &Trajectory)>) {
