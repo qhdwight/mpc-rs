@@ -74,7 +74,7 @@ fn setup(
             path: GeometryBuilder::build_as(&trajectory_path_builder.build()),
             ..default()
         },
-        Fill::color(Color::GREEN),
+        Stroke::color(Color::GREEN),
     ));
     commands.spawn(Camera2dBundle::default());
     commands.spawn((
