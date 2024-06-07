@@ -6,14 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.8.1", default-features = false, features = [
+bevy = { version = "0.13.2", default-features = false, features = [
     "bevy_sprite", "bevy_render", "bevy_core_pipeline", "bevy_asset", "png", "bevy_winit", "x11"
 ] }
-bevy_prototype_lyon = "0.6.0"
-nalgebra = "0.31.1"
+bevy_prototype_lyon = "0.11.0"
+nalgebra = "0.32.5"
 osqp = "0.6.2"
-splines = { version = "4.1.1", features = ["nalgebra"] }
-num-traits = "0.2.15"
+splines = { version = "4.3.1", features = ["nalgebra"] }
+num-traits = "0.2.19"
 
 [[example]]
 name = "robot"

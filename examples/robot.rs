@@ -1,14 +1,18 @@
 use std::f64::consts::TAU;
 
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+};
 use bevy_prototype_lyon::prelude::*;
 
-use mpc_rs::controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController, Waypoint};
-use mpc_rs::robot::{InputVec, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec, System};
+use mpc_rs::{
+    controller::{ConstraintMat, LinearTimedPath, MpcController, TimedPath, TimedPathController, Waypoint},
+    robot::{InputVec, LinearUnicycleSystem, NonlinearUnicycleSystem, StateVec, System},
+};
 
 #[derive(Component)]
-struct Robot(NonlinearUnicycleSystem, Vec<Vec2>);
+struct Robot(NonlinearUnicycleSystem);
 
 #[derive(Component)]
 struct Controller(MpcController<LinearTimedPath, LinearUnicycleSystem>);
@@ -16,7 +20,7 @@ struct Controller(MpcController<LinearTimedPath, LinearUnicycleSystem>);
 #[derive(Component)]
 struct Trajectory(LinearTimedPath);
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct Simulation {
     elapsed_seconds: f64,
 }
@@ -30,16 +34,16 @@ const SPRITE_SIZE: f32 = 32.0;
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(WindowDescriptor {
-            title: "Robot Simulator".to_string(),
+        .add_systems(Startup, setup)
+        .add_systems(Update, tick)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Robot Simulator".into(),
+                ..default()
+            }),
             ..default()
-        })
-        .add_startup_system(setup)
-        .add_system(tick)
-        .add_plugins(DefaultPlugins)
-        .add_plugin(ShapePlugin)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        }))
+        .add_plugins((ShapePlugin, LogDiagnosticsPlugin::default(), FrameTimeDiagnosticsPlugin))
         .insert_resource(Simulation::default())
         .run();
 }
@@ -63,24 +67,27 @@ fn setup(
     for waypoint in &waypoints {
         trajectory_path_builder.line_to(WORLD_TO_SCREEN * Vec2::new(waypoint.pose.x as f32, waypoint.pose.y as f32));
     }
-    commands.spawn_bundle(GeometryBuilder::build_as(
-        &trajectory_path_builder.build(),
-        DrawMode::Stroke(StrokeMode::new(Color::GREEN, 1.0)),
-        Transform::default(),
-    ));
-    commands.spawn_bundle(Camera2dBundle::default());
-    commands.spawn_bundle(SpriteBundle {
-        sprite: Sprite {
-            custom_size: Some(Vec2::new(SPRITE_SIZE, SPRITE_SIZE)),
+    commands.spawn((
+        ShapeBundle {
+            path: GeometryBuilder::build_as(&trajectory_path_builder.build()),
             ..default()
         },
-        texture: asset_server.load("robot.png"),
-        ..default()
-    })
-        .insert(Robot(NonlinearUnicycleSystem {
+        Stroke::color(Color::GREEN),
+    ));
+    commands.spawn(Camera2dBundle::default());
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(SPRITE_SIZE, SPRITE_SIZE)),
+                ..default()
+            },
+            texture: asset_server.load("robot.png"),
+            ..default()
+        },
+        Robot(NonlinearUnicycleSystem {
             x: StateVec::new(0.0, 0.0, 0.0)
-        }, Vec::new()))
-        .insert(Controller(MpcController::new(
+        }),
+        Controller(MpcController::new(
             HORIZON_SECONDS, TICK_DELTA_SECONDS,
             InputVec::new(-1.0, -0.3),
             InputVec::new(1.0, 0.3),
@@ -89,20 +96,20 @@ fn setup(
                 0.0, 1.0, 0.0,
                 0.0, 0.0, 50.0,
             ),
-        )))
-        .insert(Trajectory(LinearTimedPath::new(
+        )),
+        Trajectory(LinearTimedPath::new(
             waypoints, TICK_DELTA_SECONDS,
-        )));
+        ))
+    ));
 }
 
 fn tick(mut time: ResMut<Simulation>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &Trajectory)>) {
     for (mut robot, mut transform, mut controller, trajectory) in &mut query {
         let u = controller.0.control(&trajectory.0, robot.0.x, time.elapsed_seconds);
-        // let u = InputVec::zeros();
         robot.0.x = robot.0.tick(u, TICK_DELTA_SECONDS);
         time.elapsed_seconds += TICK_DELTA_SECONDS;
         let pose = &robot.0.x;
-        transform.translation = WORLD_TO_SCREEN * Vec3::new(pose.x as f32, pose.y as f32, 0.0);
+        transform.translation = WORLD_TO_SCREEN * Vec3::new(pose.x as f32, pose.y as f32, 1.0);
         transform.rotation = Quat::from_axis_angle(Vec3::Z, (pose.z - TAU / 4.0) as f32);
     }
 }
