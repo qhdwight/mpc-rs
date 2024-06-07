@@ -12,7 +12,7 @@ use mpc_rs::{
 };
 
 #[derive(Component)]
-struct Robot(NonlinearUnicycleSystem, Vec<Vec2>);
+struct Robot(NonlinearUnicycleSystem);
 
 #[derive(Component)]
 struct Controller(MpcController<LinearTimedPath, LinearUnicycleSystem>);
@@ -34,8 +34,8 @@ const SPRITE_SIZE: f32 = 32.0;
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
-        .add_startup_system(setup)
-        .add_system(tick)
+        .add_systems(Startup, setup)
+        .add_systems(Update, tick)
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Robot Simulator".into(),
@@ -43,9 +43,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugin(ShapePlugin)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins((ShapePlugin, LogDiagnosticsPlugin::default(), FrameTimeDiagnosticsPlugin))
         .insert_resource(Simulation::default())
         .run();
 }
@@ -88,7 +86,7 @@ fn setup(
         },
         Robot(NonlinearUnicycleSystem {
             x: StateVec::new(0.0, 0.0, 0.0)
-        }, Vec::new()),
+        }),
         Controller(MpcController::new(
             HORIZON_SECONDS, TICK_DELTA_SECONDS,
             InputVec::new(-1.0, -0.3),
@@ -108,11 +106,10 @@ fn setup(
 fn tick(mut time: ResMut<Simulation>, mut query: Query<(&mut Robot, &mut Transform, &mut Controller, &Trajectory)>) {
     for (mut robot, mut transform, mut controller, trajectory) in &mut query {
         let u = controller.0.control(&trajectory.0, robot.0.x, time.elapsed_seconds);
-        // let u = InputVec::zeros();
         robot.0.x = robot.0.tick(u, TICK_DELTA_SECONDS);
         time.elapsed_seconds += TICK_DELTA_SECONDS;
         let pose = &robot.0.x;
-        transform.translation = WORLD_TO_SCREEN * Vec3::new(pose.x as f32, pose.y as f32, 0.0);
+        transform.translation = WORLD_TO_SCREEN * Vec3::new(pose.x as f32, pose.y as f32, 1.0);
         transform.rotation = Quat::from_axis_angle(Vec3::Z, (pose.z - TAU / 4.0) as f32);
     }
 }
