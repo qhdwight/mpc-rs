@@ -1,3 +1,6 @@
+> [!WARNING]  
+> When I wrote this I was a convex optimization NOOB! I know more know and want to revamp when I find time...
+
 # Linear Model Predictive Control
 
 ### Demo
