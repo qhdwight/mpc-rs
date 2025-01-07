@@ -1,5 +1,5 @@
 > [!WARNING]  
-> When I wrote this I was a convex optimization NOOB! I know more know and want to revamp when I find time...
+> When I wrote this I was a convex optimization NOOB! I would like to rewrite this when I can find the time...
 
 # Linear Model Predictive Control
 
